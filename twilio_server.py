@@ -46,7 +46,7 @@ async def incoming_call(request: Request):
     
     # Create TwiML response
     response = VoiceResponse()
-    response.say("Congratulations! Your AI voice agent is working! This call successfully reached your server.", voice="Polly.Aditi")
+    response.say("Hello! I am your AI assistant powered by Sarvam AI. How can I help you today?", voice="Polly.Aditi")
     
     # Connect to WebSocket for media streaming
     connect = Connect()
@@ -59,22 +59,105 @@ async def incoming_call(request: Request):
 
 @app.websocket("/media-stream")
 async def media_stream(websocket: WebSocket):
-    """Handle Twilio media stream WebSocket"""
+    """Handle Twilio media stream WebSocket with full AI conversation"""
     await websocket.accept()
-    logger.info("WebSocket connected")
+    logger.info("🔌 WebSocket connected")
+    
+    from sarvam_ai import SarvamAI
+    from audio_utils import decode_mulaw_base64, mulaw_to_wav, wav_to_mulaw, encode_mulaw_base64
+    import json
+    
+    sarvam = SarvamAI()
+    stream_sid = None
+    audio_buffer = bytearray()
+    buffer_threshold = 8000  # ~1 second of audio at 8kHz
+    
+    # Conversation context
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a helpful AI assistant on a phone call. Keep responses very short (1-2 sentences). Respond in the same language the user speaks."
+        }
+    ]
     
     try:
-        # Here you would integrate with your Pipecat bot
-        # For now, just echo back
         while True:
             data = await websocket.receive_text()
-            logger.debug(f"Received: {data[:100]}")
-            # Process with Pipecat bot here
+            event = json.loads(data)
             
+            event_type = event.get("event")
+            
+            if event_type == "start":
+                stream_sid = event["start"]["streamSid"]
+                logger.info(f"🎙️ Stream started: {stream_sid}")
+            
+            elif event_type == "media":
+                # Receive audio from Twilio
+                payload = event["media"]["payload"]
+                mulaw_data = decode_mulaw_base64(payload)
+                audio_buffer.extend(mulaw_data)
+                
+                # Process when buffer is full
+                if len(audio_buffer) >= buffer_threshold:
+                    logger.info(f"🎤 Processing {len(audio_buffer)} bytes of audio")
+                    
+                    # Convert to WAV
+                    wav_data = mulaw_to_wav(bytes(audio_buffer))
+                    audio_buffer.clear()
+                    
+                    if wav_data:
+                        # STT
+                        text = await sarvam.speech_to_text(wav_data)
+                        
+                        if text and len(text.strip()) > 2:
+                            logger.info(f"👤 User said: {text}")
+                            
+                            # Add to conversation
+                            messages.append({"role": "user", "content": text})
+                            
+                            # LLM
+                            response = await sarvam.chat(messages)
+                            messages.append({"role": "assistant", "content": response})
+                            
+                            # Keep conversation short
+                            if len(messages) > 11:
+                                messages = [messages[0]] + messages[-10:]
+                            
+                            logger.info(f"🤖 AI responds: {response}")
+                            
+                            # TTS
+                            tts_wav = await sarvam.text_to_speech(response)
+                            
+                            if tts_wav:
+                                # Convert to mulaw
+                                response_mulaw = wav_to_mulaw(tts_wav)
+                                
+                                # Send back to Twilio in chunks
+                                chunk_size = 160  # 20ms chunks
+                                for i in range(0, len(response_mulaw), chunk_size):
+                                    chunk = response_mulaw[i:i+chunk_size]
+                                    encoded = encode_mulaw_base64(chunk)
+                                    
+                                    media_msg = {
+                                        "event": "media",
+                                        "streamSid": stream_sid,
+                                        "media": {"payload": encoded}
+                                    }
+                                    
+                                    await websocket.send_text(json.dumps(media_msg))
+                                    await asyncio.sleep(0.02)  # 20ms delay
+            
+            elif event_type == "stop":
+                logger.info("🛑 Stream stopped")
+                break
+    
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        logger.error(f"❌ WebSocket error: {e}")
+    
     finally:
+        await sarvam.close()
         await websocket.close()
+        logger.info("🔌 WebSocket closed")
 
 
 @app.post("/call/start")
