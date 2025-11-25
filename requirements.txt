@@ -1,0 +1,31 @@
+# Core Pipecat framework
+pipecat-ai>=0.0.95
+
+# Sarvam AI integration
+sarvamai>=0.1.21
+
+# Environment and logging
+python-dotenv>=1.0.0
+loguru>=0.7.0
+
+# OpenAI for LLM service
+openai>=1.0.0
+
+# Audio processing dependencies
+numpy>=1.24.0
+
+# Smart turn analyzer dependencies
+transformers>=4.30.0
+torch>=2.0.0
+
+# Web framework dependencies
+fastapi>=0.100.0
+uvicorn>=0.23.0
+
+# WebRTC dependencies
+aiortc>=1.5.0
+pipecat-ai-small-webrtc-prebuilt
+opencv-python>=4.8.0
+
+# Note: daily-python is not available on Windows
+# For Daily transport, run on Linux/Mac or use WebRTC transport instead
