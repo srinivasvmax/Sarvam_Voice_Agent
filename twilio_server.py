@@ -46,7 +46,7 @@ async def incoming_call(request: Request):
     
     # Create TwiML response
     response = VoiceResponse()
-    response.say("Hello! I am your AI assistant powered by Sarvam AI. How can I help you today?", voice="Polly.Aditi")
+    response.say("Welcome to Electrical Department Customer Support. How may I assist you today?", voice="Polly.Aditi")
     
     # Connect to WebSocket for media streaming
     connect = Connect()
@@ -76,7 +76,16 @@ async def media_stream(websocket: WebSocket):
     messages = [
         {
             "role": "system",
-            "content": "You are a helpful AI assistant on a phone call. Keep responses very short (1-2 sentences). Respond in the same language the user speaks."
+            "content": """You are a customer support agent for the Electrical Department. 
+
+Key instructions:
+- ALWAYS respond in the SAME language the user speaks (English, Hindi, Telugu, Urdu, etc.)
+- Keep responses SHORT and clear (1-2 sentences for voice calls)
+- Be professional and helpful
+- Help with electrical department queries, complaints, and information
+- If you don't know something, politely say so and offer to connect them to a human agent
+
+Remember: Match the user's language automatically!"""
         }
     ]
     
