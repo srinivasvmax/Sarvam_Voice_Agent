@@ -115,8 +115,8 @@ Remember: Match the user's language automatically!"""
                     audio_buffer.clear()
                     
                     if wav_data:
-                        # STT
-                        text = await sarvam.speech_to_text(wav_data)
+                        # STT with language detection
+                        text, detected_lang = await sarvam.speech_to_text(wav_data)
                         
                         if text and len(text.strip()) > 2:
                             logger.info(f"👤 User said: {text}")
@@ -134,8 +134,8 @@ Remember: Match the user's language automatically!"""
                             
                             logger.info(f"🤖 AI responds: {response}")
                             
-                            # TTS
-                            tts_wav = await sarvam.text_to_speech(response)
+                            # TTS in the detected language
+                            tts_wav = await sarvam.text_to_speech(response, detected_lang)
                             
                             if tts_wav:
                                 # Convert to mulaw
