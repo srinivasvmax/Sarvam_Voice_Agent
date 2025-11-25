@@ -29,3 +29,6 @@ opencv-python>=4.8.0
 
 # Twilio SDK (for phone call integration)
 twilio>=8.10.0
+
+# HTTP Client (for Sarvam AI API calls)
+aiohttp>=3.9.0
