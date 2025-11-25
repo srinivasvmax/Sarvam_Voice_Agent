@@ -21,8 +21,8 @@ import os
 from dotenv import load_dotenv
 from loguru import logger
 
-print("🚀 Starting Pipecat bot...")
-print("⏳ Loading models and imports (20 seconds, first run only)\n")
+print("Starting Pipecat bot...")
+print("Loading models and imports (20 seconds, first run only)\n")
 
 logger.info("Loading Local Smart Turn Analyzer V3...")
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3

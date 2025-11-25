@@ -1,31 +1,31 @@
-# Core Pipecat framework
+# ===== Pipecat Framework =====
 pipecat-ai>=0.0.95
 
-# Sarvam AI integration
+# ===== Sarvam AI Integration =====
 sarvamai>=0.1.21
 
-# Environment and logging
+# ===== LLM Service =====
+openai>=1.0.0
+
+# ===== Environment and Logging =====
 python-dotenv>=1.0.0
 loguru>=0.7.0
 
-# OpenAI for LLM service
-openai>=1.0.0
-
-# Audio processing dependencies
+# ===== Audio Processing =====
 numpy>=1.24.0
 
-# Smart turn analyzer dependencies
+# ===== AI Models =====
 transformers>=4.30.0
 torch>=2.0.0
 
-# Web framework dependencies
+# ===== Web Framework (for WebRTC) =====
 fastapi>=0.100.0
 uvicorn>=0.23.0
 
-# WebRTC dependencies
+# ===== WebRTC Transport =====
 aiortc>=1.5.0
 pipecat-ai-small-webrtc-prebuilt
 opencv-python>=4.8.0
 
-# Note: daily-python is not available on Windows
-# For Daily transport, run on Linux/Mac or use WebRTC transport instead
+# Twilio SDK (for phone call integration)
+twilio>=8.10.0

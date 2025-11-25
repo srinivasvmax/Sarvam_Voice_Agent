@@ -1,173 +1,422 @@
-# Pipecat Quickstart
+# 🎙️ Sarvam AI Voice Bot with Pipecat
 
-Build and deploy your first voice AI bot in under 10 minutes. Develop locally, then scale to production on Pipecat Cloud.
+Real-time voice AI bot powered by Sarvam AI and Pipecat framework. Supports browser calls (WebRTC) and phone calls (Twilio).
 
-**Two steps**: [🏠 Local Development](#run-your-bot-locally) → [☁️ Production Deployment](#deploy-to-production)
-
-## Step 1: Local Development (5 min)
-
-### Prerequisites
-
-#### Environment
-
-- Python 3.10 or later
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager installed
-
-#### AI Service API keys
-
-You'll need API keys from three services:
-
-- [Deepgram](https://console.deepgram.com/signup) for Speech-to-Text
-- [OpenAI](https://auth.openai.com/create-account) for LLM inference
-- [Cartesia](https://play.cartesia.ai/sign-up) for Text-to-Speech
-
-> 💡 **Tip**: Sign up for all three now. You'll need them for both local and cloud deployment.
-
-### Setup
-
-Navigate to the quickstart directory and set up your environment.
-
-1. Clone this repository
-
-   ```bash
-   git clone https://github.com/pipecat-ai/pipecat-quickstart.git
-   cd pipecat-quickstart
-   ```
-
-2. Configure your API keys:
-
-   Create a `.env` file:
-
-   ```bash
-   cp env.example .env
-   ```
-
-   Then, add your API keys:
-
-   ```ini
-   DEEPGRAM_API_KEY=your_deepgram_api_key
-   OPENAI_API_KEY=your_openai_api_key
-   CARTESIA_API_KEY=your_cartesia_api_key
-   ```
-
-3. Set up a virtual environment and install dependencies
-
-   ```bash
-   uv sync
-   ```
-
-### Run your bot locally
-
-```bash
-uv run bot.py
-```
-
-**Open http://localhost:7860 in your browser** and click `Connect` to start talking to your bot.
-
-> 💡 First run note: The initial startup may take ~20 seconds as Pipecat downloads required models and imports.
-
-🎉 **Success!** Your bot is running locally. Now let's deploy it to production so others can use it.
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![Pipecat](https://img.shields.io/badge/Pipecat-0.0.95+-green.svg)](https://pipecat.ai/)
+[![Sarvam AI](https://img.shields.io/badge/Sarvam%20AI-Latest-orange.svg)](https://www.sarvam.ai/)
 
 ---
 
-## Step 2: Deploy to Production (5 min)
+## 🚀 Quick Start
 
-Transform your local bot into a production-ready service. Pipecat Cloud handles scaling, monitoring, and global deployment.
+```bash
+# 1. Activate virtual environment
+venv\Scripts\activate
 
-### Prerequisites
+# 2. Install dependencies
+pip install -r requirements.txt
 
-1. [Sign up for Pipecat Cloud](https://pipecat.daily.co/sign-up).
+# 3. Run the bot
+python bot.py
+```
 
-2. Set up Docker for building your bot image:
+**For phone calls with Twilio:**
+```bash
+python bot_twilio.py --transport twilio
+```
 
-   - **Install [Docker](https://www.docker.com/)** on your system
-   - **Create a [Docker Hub](https://hub.docker.com/) account**
-   - **Login to Docker Hub:**
+---
 
-     ```bash
-     docker login
-     ```
+## ✨ Features
 
-3. Install the Pipecat CLI
+- 🎤 **Speech-to-Text** - Sarvam AI STT (saarika:v2.5)
+- 🧠 **Language Model** - Sarvam AI LLM (sarvam-2b)
+- 🔊 **Text-to-Speech** - Sarvam AI TTS (bulbul:v2)
+- 🌐 **Multilingual** - English, Hindi, Telugu, Urdu
+- 🌍 **WebRTC** - Browser-based calls
+- 📞 **Twilio** - Phone call support (optional)
+- ⚡ **Real-time** - Low latency responses
 
-   ```bash
-   uv tool install pipecat-ai-cli
-   ```
+---
 
-   > Tip: You can run the `pipecat` CLI using the `pc` alias.
+## 📁 Project Structure
 
-### Configure your deployment
+```
+AI_Voice_Agent/
+├── bot.py                    # Main bot (WebRTC)
+├── bot_twilio.py             # Phone call bot (Twilio)
+├── docs/                     # Documentation
+│   ├── TWILIO_WITH_PIPECAT.md  # Twilio integration guide
+│   └── ...
+├── requirements.txt          # Dependencies
+├── .env                      # Configuration
+└── README.md                 # This file
+```
 
-The `pcc-deploy.toml` file tells Pipecat Cloud how to run your bot. **Update the image field** with your Docker Hub username by editing `pcc-deploy.toml`.
+---
+
+## 🎯 Two Ways to Use
+
+### 1. Browser Calls (WebRTC) - Default
+
+```bash
+python bot.py
+```
+
+Then open http://localhost:7860/client in your browser.
+
+### 2. Phone Calls (Twilio) - Optional
+
+```bash
+python bot_twilio.py --transport twilio
+```
+
+**See [docs/TWILIO_WITH_PIPECAT.md](docs/TWILIO_WITH_PIPECAT.md) for Twilio setup.**
+
+---
+
+## 🌐 Language Support
+
+Automatically detects and responds in the user's language:
+
+```
+English → "Hello, how are you?"
+Hindi   → "नमस्ते, आप कैसे हैं?"
+Telugu  → "హలో, మీరు ఎలా ఉన్నారు?"
+Urdu    → "ہیلو، آپ کیسے ہیں؟"
+```
+
+---
+
+## ⚙️ Configuration
+
+Edit `.env`:
 
 ```ini
-agent_name = "quickstart"
-image = "YOUR_DOCKERHUB_USERNAME/quickstart:0.1"  # 👈 Update this line
-secret_set = "quickstart-secrets"
+# Sarvam AI (Required)
+SARVAM_API_KEY=sk_sjr5xw5l_urtKksPsZ9ZBLydh6QdPcUyy
 
-[scaling]
-	min_agents = 1
+# Twilio (Optional - for phone calls)
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_auth_token
+TWILIO_PHONE_NUMBER=+1234567890
 ```
-
-**Understanding the TOML file settings:**
-
-- `agent_name`: Your bot's name in Pipecat Cloud
-- `image`: The Docker image to deploy (format: `username/image:version`)
-- `secret_set`: Where your API keys are stored securely
-- `min_agents`: Number of bot instances to keep ready (1 = instant start)
-
-> 💡 Tip: [Set up `image_credentials`](https://docs.pipecat.ai/deployment/pipecat-cloud/fundamentals/secrets#image-pull-secrets) in your TOML file for authenticated image pulls
-
-### Log in to Pipecat Cloud
-
-To start using the CLI, authenticate to Pipecat Cloud:
-
-```bash
-pipecat cloud auth login
-```
-
-You'll be presented with a link that you can click to authenticate your client.
-
-### Configure secrets
-
-Upload your API keys to Pipecat Cloud's secure storage:
-
-```bash
-pipecat cloud secrets set quickstart-secrets --file .env
-```
-
-This creates a secret set called `quickstart-secrets` (matching your TOML file) and uploads all your API keys from `.env`.
-
-### Build and deploy
-
-Build your Docker image and push to Docker Hub:
-
-```bash
-pipecat cloud docker build-push
-```
-
-Deploy to Pipecat Cloud:
-
-```bash
-pipecat cloud deploy
-```
-
-### Connect to your agent
-
-1. Open your [Pipecat Cloud dashboard](https://pipecat.daily.co/)
-2. Select your `quickstart` agent → **Sandbox**
-3. Allow microphone access and click **Connect**
 
 ---
 
-## What's Next?
+## 🔧 Customization
 
-**🔧 Customize your bot**: Modify `bot.py` to change personality, add functions, or integrate with your data  
-**📚 Learn more**: Check out [Pipecat's docs](https://docs.pipecat.ai/) for advanced features  
-**💬 Get help**: Join [Pipecat's Discord](https://discord.gg/pipecat) to connect with the community
+### Change Voice
 
-### Troubleshooting
+Edit `bot.py` or `bot_twilio.py`:
 
-- **Browser permissions**: Allow microphone access when prompted
-- **Connection issues**: Try a different browser or check VPN/firewall settings
-- **Audio issues**: Verify microphone and speakers are working and not muted
+```python
+tts = SarvamTTSService(
+    voice_id="meera",  # Options: meera, arvind, karun
+    ...
+)
+```
+
+### Change LLM Model
+
+```python
+llm = OpenAILLMService(
+    model="sarvam-2b"  # Options: sarvam-2b, gemma-4b, gemma-12b
+)
+```
+
+### Adjust Voice Parameters
+
+```python
+params=SarvamTTSService.InputParams(
+    pitch=0.0,      # -0.75 to 0.75
+    pace=1.0,       # 0.3 to 3.0
+    loudness=1.0,   # 0.1 to 3.0
+    temperature=0.6 # 0.01 to 1.0
+)
+```
+
+---
+
+## 📞 Twilio Integration
+
+**Important:** Pipecat handles Twilio internally - you don't need the Twilio SDK!
+
+Just:
+1. Add Twilio credentials to `.env`
+2. Run with `--transport twilio`
+
+**See [docs/TWILIO_WITH_PIPECAT.md](docs/TWILIO_WITH_PIPECAT.md) for details.**
+
+---
+
+## 🐛 Troubleshooting
+
+### Bot won't start
+- Ensure venv is activated
+- Install dependencies: `pip install -r requirements.txt`
+- Check Python version: 3.10+
+
+### No audio in browser
+- Allow microphone permissions
+- Click microphone icon to unmute
+- Try Chrome browser
+
+### Twilio not working
+- Check credentials in `.env`
+- Run with `--transport twilio` flag
+- See [docs/TWILIO_WITH_PIPECAT.md](docs/TWILIO_WITH_PIPECAT.md)
+
+---
+
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| **[TWILIO_WITH_PIPECAT.md](docs/TWILIO_WITH_PIPECAT.md)** | Twilio integration guide |
+| **[docs/](docs/)** | Additional documentation |
+
+---
+
+## 📊 Performance
+
+- **STT Latency**: 1-2 seconds
+- **LLM Latency**: 0.4-0.8 seconds
+- **TTS Latency**: 0.6-1.4 seconds
+- **Total Response**: 2-4 seconds
+
+---
+
+## 🎓 How It Works
+
+```
+User Speech → Pipecat Transport → STT → LLM → TTS → User Hears
+                                   ↓     ↓     ↓
+                              Sarvam AI Services
+```
+
+Pipecat handles:
+- Audio streaming
+- Transport (WebRTC/Twilio)
+- Pipeline management
+
+You configure:
+- STT, LLM, TTS services
+- System prompts
+- Voice parameters
+
+---
+
+## Features
+
+- 🎤 **Speech-to-Text**: Sarvam AI STT with saarika:v2.5 model
+- 🧠 **Language Model**: Sarvam AI LLM (sarvam-m model)
+- 🔊 **Text-to-Speech**: Sarvam AI TTS with natural Karun voice
+- 🌐 **Multi-language**: Supports English, Hindi, Telugu, and more Indian languages
+- ⚡ **Real-time**: Fast response times with WebRTC transport
+- 🎯 **Natural Voice**: Configured for natural-sounding speech with optimal parameters
+
+## Prerequisites
+
+- Python 3.10 or later
+- Windows OS (WebRTC transport)
+- Sarvam AI API key
+
+## Quick Start
+
+### 1. Clone and Setup
+
+```bash
+cd AI_Voice_Agent
+python -m venv venv
+venv\Scripts\activate
+```
+
+### 2. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure API Key
+
+The `.env` file is already configured with Sarvam AI credentials:
+
+```ini
+SARVAM_API_KEY=sk_sjr5xw5l_urtKksPsZ9ZBLydh6QdPcUyy
+SARVAM_STT_URL=https://api.sarvam.ai/speech-to-text
+SARVAM_TTS_URL=https://api.sarvam.ai/text-to-speech
+```
+
+### 4. Run the Bot
+
+```bash
+python bot.py
+```
+
+### 5. Connect and Talk
+
+1. Open **http://localhost:7860/client** in your browser
+2. Click the **"Connect"** button (top-right)
+3. Allow microphone permissions
+4. Click the **microphone icon** to enable audio
+5. Start speaking!
+
+## How It Works
+
+The bot uses a pipeline architecture:
+
+```
+User Speech → Sarvam STT → LLM Processing → Sarvam TTS → Bot Speech
+```
+
+### Configuration
+
+**STT (Speech-to-Text)**
+- Model: `saarika:v2.5`
+- Supports multiple Indian languages
+
+**LLM (Language Model)**
+- Model: `sarvam-m`
+- Endpoint: `https://api.sarvam.ai/v1/chat/completions`
+- Alternative models: `gemma-4b`, `gemma-12b`
+
+**TTS (Text-to-Speech)**
+- Voice: `karun` (male voice)
+- Model: `bulbul:v2`
+- Parameters:
+  - Pitch: 0.0 (natural)
+  - Pace: 1.0 (normal speed)
+  - Loudness: 1.0 (normal volume)
+  - Temperature: 0.6 (balanced naturalness)
+  - Preprocessing: Enabled
+
+**Available Voices:**
+- Female: anushka, manisha, vidya, arya
+- Male: abhilash, karun, hitesh
+
+## Usage Examples
+
+### Basic Conversation
+```
+You: "Hello, how are you?"
+Bot: "Hi there! I'm just a computer program, but thanks for asking!"
+```
+
+### Multi-language Support
+```
+You: "తెలుగులో నాకు ఒక జోక్ చెప్పు" (Tell me a joke in Telugu)
+Bot: [Responds with a joke in Telugu]
+
+You: "Switch to Hindi"
+Bot: [Continues conversation in Hindi]
+```
+
+## Customization
+
+### Change Voice
+
+Edit `bot.py` line 75:
+
+```python
+voice_id="karun",  # Change to: anushka, manisha, vidya, arya, abhilash, hitesh
+```
+
+### Change LLM Model
+
+Edit `bot.py` line 93:
+
+```python
+model="sarvam-m"  # Change to: gemma-4b, gemma-12b
+```
+
+### Adjust Voice Parameters
+
+Edit `bot.py` lines 77-82:
+
+```python
+params=SarvamTTSService.InputParams(
+    pitch=0.0,      # Range: -0.75 to 0.75
+    pace=1.0,       # Range: 0.3 to 3.0
+    loudness=1.0,   # Range: 0.1 to 3.0
+    temperature=0.6 # Range: 0.01 to 1.0
+)
+```
+
+## Troubleshooting
+
+### Bot won't start
+- Ensure venv is activated: `venv\Scripts\activate`
+- Install all dependencies: `pip install -r requirements.txt`
+- Check Python version: `python --version` (needs 3.10+)
+
+### No audio in browser
+- Allow microphone permissions
+- Click the microphone icon to unmute
+- Check your microphone is selected in Devices panel
+
+### 404 or 400 Errors
+- Verify your Sarvam API key is correct in `.env`
+- Check the model name is valid (sarvam-m, gemma-4b, or gemma-12b)
+
+### Connection Issues
+- Try a different browser (Chrome recommended)
+- Disable VPN or firewall temporarily
+- Check if port 7860 is available
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Browser Client                        │
+│              http://localhost:7860/client                │
+└────────────────────┬────────────────────────────────────┘
+                     │ WebRTC
+                     ↓
+┌─────────────────────────────────────────────────────────┐
+│                  Pipecat Pipeline                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ │
+│  │ Sarvam   │→ │ Sarvam   │→ │ Sarvam   │→ │ WebRTC  │ │
+│  │   STT    │  │   LLM    │  │   TTS    │  │ Output  │ │
+│  └──────────┘  └──────────┘  └──────────┘  └─────────┘ │
+└─────────────────────────────────────────────────────────┘
+                     ↓
+┌─────────────────────────────────────────────────────────┐
+│                  Sarvam AI API                           │
+│  • Speech-to-Text (saarika:v2.5)                        │
+│  • Chat Completions (sarvam-m)                          │
+│  • Text-to-Speech (karun, bulbul:v2)                    │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Tech Stack
+
+- **Framework**: Pipecat 0.0.95
+- **AI Provider**: Sarvam AI
+- **Transport**: WebRTC (SmallWebRTC)
+- **Web Server**: FastAPI + Uvicorn
+- **Audio Processing**: Silero VAD, Smart Turn Analyzer V3
+- **ML Libraries**: PyTorch, Transformers
+
+## Performance
+
+- **STT Latency**: ~1-2 seconds
+- **LLM Response**: ~0.4-0.8 seconds
+- **TTS Generation**: ~0.6-1.4 seconds
+- **Total Response Time**: ~2-4 seconds
+
+## License
+
+BSD 2-Clause License
+
+## Support
+
+For issues or questions:
+- Check the [Pipecat Documentation](https://docs.pipecat.ai/)
+- Visit [Sarvam AI Documentation](https://docs.sarvam.ai/)
+- Join [Pipecat Discord](https://discord.gg/pipecat)
+
+---
+
+**Built with ❤️ using Sarvam AI and Pipecat**
