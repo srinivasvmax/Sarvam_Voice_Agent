@@ -26,9 +26,10 @@ env/
 ENV/
 .venv
 
-# Environment Variables
+# Environment Variables (IMPORTANT: Don't commit secrets!)
 .env
 .env.local
+.env.production
 
 # IDE
 .vscode/
@@ -61,3 +62,6 @@ Thumbs.db
 # ngrok
 ngrok.exe
 ngrok.yml
+
+# Railway
+.railway/
