@@ -89,7 +89,7 @@ class SarvamAI:
             session = await self.get_session()
             
             payload = {
-                "model": "sarvam-2b",
+                "model": "sarvam-m",  # Valid model: sarvam-m, gemma-4b, or gemma-12b
                 "messages": messages,
                 "temperature": 0.7,
                 "max_tokens": 100,  # Keep responses short for voice
