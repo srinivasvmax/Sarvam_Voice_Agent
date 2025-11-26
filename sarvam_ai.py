@@ -46,6 +46,9 @@ class SarvamAI:
             best_result = ""
             best_language = "te-IN"  # Default to Telugu
             
+            # Store all results for comparison
+            results = []
+            
             for lang in languages:
                 data = aiohttp.FormData()
                 data.add_field('file', audio_bytes, filename='audio.wav', content_type='audio/wav')
@@ -57,20 +60,30 @@ class SarvamAI:
                         result = await response.json()
                         text = result.get("transcript", "")
                         
-                        logger.info(f"🔍 STT attempt ({lang}): '{text}' (length: {len(text)})")
-                        
-                        # If we get a good transcription, use it
-                        if text and len(text.strip()) > len(best_result.strip()):
-                            best_result = text
-                            best_language = lang
-                            logger.info(f"✅ Better result found in {lang}")
+                        if text and len(text.strip()) > 0:
+                            results.append({
+                                'lang': lang,
+                                'text': text,
+                                'length': len(text)
+                            })
+                            logger.info(f"🔍 STT attempt ({lang}): '{text}' (length: {len(text)})")
                             
-                            # If language was specified, stop here
+                            # If language was specified, use first valid result
                             if language:
+                                best_result = text
+                                best_language = lang
                                 break
                     else:
                         error_text = await response.text()
                         logger.error(f"❌ STT API error for {lang}: {response.status} - {error_text}")
+            
+            # If no language specified, pick the first language (most likely correct)
+            # First language in list gets priority since user's primary language is Telugu
+            if not language and results:
+                # Use first valid result (Telugu priority)
+                best_result = results[0]['text']
+                best_language = results[0]['lang']
+                logger.info(f"✅ Using first result ({best_language}) as most likely correct")
             
             if best_result:
                 logger.info(f"✅ STT Final ({best_language}): {best_result}")

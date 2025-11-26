@@ -44,13 +44,98 @@ async def incoming_call(request: Request):
     
     logger.info(f"📞 Incoming call: {call_sid} from {from_number}")
     
+    # Create TwiML response with language selection
+    response = VoiceResponse()
+    
+    # Check if this is a retry (from query params)
+    retry = form_data.get("retry", "0")
+    
+    # Gather language selection (DTMF input)
+    gather = response.gather(
+        num_digits=1,
+        action=f'/voice/language-selected?retry={retry}',
+        method='POST',
+        timeout=10
+    )
+    
+    # Multi-language greeting
+    if retry == "0":
+        # First attempt - full greeting
+        gather.say("Welcome to Electrical Department Customer Support.", voice="Polly.Aditi", language="en-IN")
+    else:
+        # Retry - shorter prompt
+        gather.say("Please select a language.", voice="Polly.Aditi", language="en-IN")
+        gather.say("దయచేసి భాషను ఎంచుకోండి.", voice="Polly.Aditi", language="te-IN")
+    
+    gather.say("తెలుగు కోసం 1 నొక్కండి.", voice="Polly.Aditi", language="te-IN")
+    gather.say("हिंदी के लिए 2 दबाएं.", voice="Polly.Aditi", language="hi-IN")
+    gather.say("Press 3 for English.", voice="Polly.Aditi", language="en-IN")
+    
+    # If no input after retry, default to Telugu
+    if retry == "1":
+        response.say("No input received.", voice="Polly.Aditi", language="en-IN")
+        response.say("తెలుగుకు మారుతోంది.", voice="Polly.Aditi", language="te-IN")
+        response.redirect('/voice/language-selected?Digits=1')
+    else:
+        # First timeout - ask again
+        response.redirect('/voice/incoming?retry=1')
+    
+    return Response(content=str(response), media_type="application/xml")
+
+
+@app.post("/voice/language-selected")
+@app.get("/voice/language-selected")  # Also support GET for redirect
+async def language_selected(request: Request):
+    """Handle language selection and connect to WebSocket"""
+    # Handle both GET and POST
+    if request.method == "GET":
+        form_data = request.query_params
+    else:
+        form_data = await request.form()
+    
+    digit = form_data.get("Digits", "")
+    retry = form_data.get("retry", "0")
+    
+    # Map digit to language
+    language_map = {
+        "1": {"code": "te-IN", "name": "Telugu"},
+        "2": {"code": "hi-IN", "name": "Hindi"},
+        "3": {"code": "en-IN", "name": "English"}
+    }
+    
+    # Validate digit and get language
+    if digit not in language_map:
+        logger.warning(f"⚠️ Invalid digit pressed: {digit}")
+        
+        # If first invalid attempt, ask again
+        if retry == "0":
+            response = VoiceResponse()
+            response.say("Invalid selection.", voice="Polly.Aditi", language="en-IN")
+            response.say("చెల్లని ఎంపిక.", voice="Polly.Aditi", language="te-IN")
+            response.redirect('/voice/incoming?retry=1')
+            return Response(content=str(response), media_type="application/xml")
+        else:
+            # Second invalid attempt, default to Telugu
+            logger.info("⚠️ Second invalid attempt, defaulting to Telugu")
+            digit = "1"
+    
+    selected_lang = language_map[digit]
+    logger.info(f"🌐 User selected language: {selected_lang['name']} ({selected_lang['code']})")
+    
     # Create TwiML response
     response = VoiceResponse()
-    response.say("Welcome to Electrical Department Customer Support. How may I assist you today?", voice="Polly.Aditi")
     
-    # Connect to WebSocket for media streaming
+    # Confirm selection in chosen language (short and clear)
+    if selected_lang['code'] == "te-IN":
+        response.say("తెలుగు. మీకు ఎలా సహాయం చేయగలను?", voice="Polly.Aditi", language="te-IN")
+    elif selected_lang['code'] == "hi-IN":
+        response.say("हिंदी। मैं आपकी कैसे मदद कर सकता हूं?", voice="Polly.Aditi", language="hi-IN")
+    else:
+        response.say("English. How may I assist you?", voice="Polly.Aditi", language="en-IN")
+    
+    # Connect to WebSocket with language parameter
     connect = Connect()
-    stream = Stream(url=f'wss://{request.url.hostname}/media-stream')
+    stream = Stream(url=f'wss://{request.url.hostname}/media-stream?lang={selected_lang["code"]}')
     connect.append(stream)
     response.append(connect)
     
@@ -61,7 +146,11 @@ async def incoming_call(request: Request):
 async def media_stream(websocket: WebSocket):
     """Handle Twilio media stream WebSocket with full AI conversation"""
     await websocket.accept()
-    logger.info("🔌 WebSocket connected")
+    
+    # Get selected language from query params
+    query_params = dict(websocket.query_params)
+    selected_language = query_params.get("lang", "te-IN")
+    logger.info(f"🔌 WebSocket connected with language: {selected_language}")
     
     from sarvam_ai import SarvamAI
     from audio_utils import decode_mulaw_base64, mulaw_to_wav, wav_to_mulaw, encode_mulaw_base64
@@ -137,9 +226,9 @@ Remember: Match the user's language automatically!"""
             logger.warning("⚠️ WAV conversion failed or too small")
             return
         
-        # STT with language detection
+        # STT with user's selected language
         try:
-            text, detected_lang = await sarvam.speech_to_text(wav_data)
+            text, detected_lang = await sarvam.speech_to_text(wav_data, language=selected_language)
             
             if not text or len(text.strip()) <= 2:
                 logger.warning(f"⚠️ No speech detected or transcript too short: '{text}'")
