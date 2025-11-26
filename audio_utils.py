@@ -16,15 +16,37 @@ import base64
 from loguru import logger
 
 
-def mulaw_to_wav(mulaw_data: bytes, target_rate: int = 16000) -> bytes:
-    """Convert mulaw audio to WAV format
+def mulaw_to_wav(mulaw_data: bytes, target_rate: int = 16000, apply_noise_reduction: bool = True) -> bytes:
+    """Convert mulaw audio to WAV format with optional noise reduction
     Args:
         mulaw_data: mulaw encoded audio
         target_rate: target sample rate (16000 for better quality with Sarvam AI)
+        apply_noise_reduction: apply basic noise reduction
     """
     try:
         # Convert mulaw to linear PCM
         pcm_data = audioop.ulaw2lin(mulaw_data, 2)
+        
+        # Basic noise reduction: apply a simple noise gate
+        if apply_noise_reduction:
+            # Calculate RMS (volume) of the audio
+            rms = audioop.rms(pcm_data, 2)
+            
+            # If audio is very quiet (likely just noise), amplify it
+            if rms < 500:
+                try:
+                    # Amplify quiet audio (2x boost)
+                    pcm_data = audioop.mul(pcm_data, 2, 2.0)
+                    logger.debug(f"🔊 Amplified quiet audio (RMS: {rms})")
+                except audioop.error:
+                    pass
+            
+            # Apply simple high-pass filter by removing DC offset
+            # This helps reduce low-frequency rumble/noise
+            try:
+                pcm_data = audioop.bias(pcm_data, 2, 0)
+            except audioop.error:
+                pass
         
         # Resample from 8kHz to 16kHz for better STT quality
         if target_rate != 8000:

@@ -66,11 +66,23 @@ async def media_stream(websocket: WebSocket):
     from sarvam_ai import SarvamAI
     from audio_utils import decode_mulaw_base64, mulaw_to_wav, wav_to_mulaw, encode_mulaw_base64
     import json
+    import audioop
     
     sarvam = SarvamAI()
     stream_sid = None
     audio_buffer = bytearray()
-    buffer_threshold = 16000  # ~2 seconds of audio at 8kHz (more reliable)
+    
+    # Voice Activity Detection (VAD) settings
+    is_speaking = False
+    is_processing = False  # Prevent concurrent processing
+    silence_threshold = 1600  # ~200ms of silence at 8kHz (faster response)
+    silence_buffer = bytearray()
+    min_speech_length = 8000  # Minimum 1 second of speech
+    max_speech_length = 40000  # Maximum 5 seconds of speech
+    
+    # Adaptive noise threshold
+    noise_floor = 300  # Initial noise floor
+    speech_threshold = 600  # Initial speech threshold
     
     # Conversation context
     messages = [
@@ -89,6 +101,100 @@ Remember: Match the user's language automatically!"""
         }
     ]
     
+    async def process_speech_buffer():
+        """Process accumulated speech buffer"""
+        nonlocal is_speaking, is_processing, audio_buffer, silence_buffer
+        
+        # Prevent concurrent processing
+        if is_processing:
+            logger.warning("⚠️ Already processing speech, ignoring new input")
+            audio_buffer.clear()
+            silence_buffer.clear()
+            is_speaking = False
+            return
+        
+        if len(audio_buffer) < min_speech_length:
+            logger.warning(f"⚠️ Speech too short ({len(audio_buffer)} bytes), ignoring")
+            audio_buffer.clear()
+            silence_buffer.clear()
+            is_speaking = False
+            return
+        
+        is_processing = True  # Lock processing
+        
+        logger.info(f"🔊 Processing {len(audio_buffer)} bytes of speech")
+        
+        # Convert to WAV
+        mulaw_bytes = bytes(audio_buffer)
+        wav_data = mulaw_to_wav(mulaw_bytes)
+        
+        # Reset buffers
+        audio_buffer.clear()
+        silence_buffer.clear()
+        is_speaking = False
+        
+        if not wav_data or len(wav_data) < 100:
+            logger.warning("⚠️ WAV conversion failed or too small")
+            return
+        
+        # STT with language detection
+        try:
+            text, detected_lang = await sarvam.speech_to_text(wav_data)
+            
+            if not text or len(text.strip()) <= 2:
+                logger.warning(f"⚠️ No speech detected or transcript too short: '{text}'")
+                is_processing = False  # Unlock
+                return
+            
+            logger.info(f"👤 User said ({detected_lang}): {text}")
+            
+            # Add to conversation
+            messages.append({"role": "user", "content": text})
+            
+            # LLM
+            response = await sarvam.chat(messages)
+            messages.append({"role": "assistant", "content": response})
+        except Exception as e:
+            logger.error(f"❌ Error in STT/LLM: {e}")
+            is_processing = False
+            return
+        
+        # Keep conversation short
+        if len(messages) > 11:
+            messages = [messages[0]] + messages[-10:]
+        
+        logger.info(f"🤖 AI responds: {response}")
+        
+        # TTS in the detected language
+        tts_wav = await sarvam.text_to_speech(response, detected_lang)
+        
+        if tts_wav:
+            # Convert WAV to raw mulaw (8kHz, mono) for Twilio
+            response_mulaw = wav_to_mulaw(tts_wav)
+            
+            if response_mulaw:
+                logger.info(f"📤 Sending {len(response_mulaw)} mulaw bytes to Twilio")
+                
+                # Send back to Twilio in 20ms chunks (160 bytes at 8kHz)
+                chunk_size = 160  # 20ms chunks at 8kHz
+                for i in range(0, len(response_mulaw), chunk_size):
+                    chunk = response_mulaw[i:i+chunk_size]
+                    encoded = encode_mulaw_base64(chunk)
+                    
+                    media_msg = {
+                        "event": "media",
+                        "streamSid": stream_sid,
+                        "media": {"payload": encoded}
+                    }
+                    
+                    await websocket.send_text(json.dumps(media_msg))
+                    await asyncio.sleep(0.02)  # 20ms delay
+                
+                is_processing = False  # Unlock after response sent
+            else:
+                logger.error("❌ Failed to convert TTS to mulaw")
+                is_processing = False  # Unlock on error
+    
     try:
         while True:
             data = await websocket.receive_text()
@@ -104,65 +210,43 @@ Remember: Match the user's language automatically!"""
                 # Receive audio from Twilio
                 payload = event["media"]["payload"]
                 mulaw_data = decode_mulaw_base64(payload)
-                audio_buffer.extend(mulaw_data)
                 
-                # Process when buffer is full
-                if len(audio_buffer) >= buffer_threshold:
-                    logger.info(f"🎤 Processing {len(audio_buffer)} bytes of audio")
+                # Simple Voice Activity Detection (VAD)
+                # Convert mulaw to PCM to check volume
+                pcm_data = audioop.ulaw2lin(mulaw_data, 2)
+                rms = audioop.rms(pcm_data, 2)  # Get volume level
+                
+                # Adaptive threshold: update noise floor when not speaking
+                if not is_speaking and rms < noise_floor * 1.5:
+                    noise_floor = int(noise_floor * 0.95 + rms * 0.05)  # Smooth update
+                    speech_threshold = noise_floor * 2  # Speech is 2x noise floor
+                
+                # Detect if user is speaking (volume above adaptive threshold)
+                is_speech = rms > speech_threshold
+                
+                if is_speech:
+                    # User is speaking
+                    if not is_speaking:
+                        logger.info(f"🎤 Speech started (volume: {rms}, threshold: {speech_threshold})")
+                        is_speaking = True
                     
-                    # Convert to WAV
-                    mulaw_bytes = bytes(audio_buffer)
-                    logger.info(f"🔊 Converting {len(mulaw_bytes)} mulaw bytes to WAV")
-                    wav_data = mulaw_to_wav(mulaw_bytes)
-                    logger.info(f"🔊 WAV data: {len(wav_data)} bytes")
-                    audio_buffer.clear()
+                    audio_buffer.extend(mulaw_data)
+                    silence_buffer.clear()
                     
-                    if wav_data and len(wav_data) > 100:
-                        # STT with language detection
-                        text, detected_lang = await sarvam.speech_to_text(wav_data)
+                    # Prevent buffer from getting too large
+                    if len(audio_buffer) > max_speech_length:
+                        logger.info(f"⏱️ Max speech length reached, processing...")
+                        await process_speech_buffer()
+                else:
+                    # Silence or low volume
+                    if is_speaking:
+                        # User was speaking, now silence
+                        silence_buffer.extend(mulaw_data)
                         
-                        if text and len(text.strip()) > 2:
-                            logger.info(f"👤 User said: {text}")
-                            
-                            # Add to conversation
-                            messages.append({"role": "user", "content": text})
-                            
-                            # LLM
-                            response = await sarvam.chat(messages)
-                            messages.append({"role": "assistant", "content": response})
-                            
-                            # Keep conversation short
-                            if len(messages) > 11:
-                                messages = [messages[0]] + messages[-10:]
-                            
-                            logger.info(f"🤖 AI responds: {response}")
-                            
-                            # TTS in the detected language
-                            tts_wav = await sarvam.text_to_speech(response, detected_lang)
-                            
-                            if tts_wav:
-                                # Convert WAV to raw mulaw (8kHz, mono) for Twilio
-                                response_mulaw = wav_to_mulaw(tts_wav)
-                                
-                                if response_mulaw:
-                                    logger.info(f"📤 Sending {len(response_mulaw)} mulaw bytes to Twilio")
-                                    
-                                    # Send back to Twilio in 20ms chunks (160 bytes at 8kHz)
-                                    chunk_size = 160  # 20ms chunks at 8kHz
-                                    for i in range(0, len(response_mulaw), chunk_size):
-                                        chunk = response_mulaw[i:i+chunk_size]
-                                        encoded = encode_mulaw_base64(chunk)
-                                        
-                                        media_msg = {
-                                            "event": "media",
-                                            "streamSid": stream_sid,
-                                            "media": {"payload": encoded}
-                                        }
-                                        
-                                        await websocket.send_text(json.dumps(media_msg))
-                                        await asyncio.sleep(0.02)  # 20ms delay
-                                else:
-                                    logger.error("❌ Failed to convert TTS to mulaw")
+                        # If enough silence after speech, process it
+                        if len(silence_buffer) >= silence_threshold:
+                            logger.info(f"🔇 Silence detected after speech")
+                            await process_speech_buffer()
             
             elif event_type == "stop":
                 logger.info("🛑 Stream stopped")

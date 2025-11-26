@@ -34,16 +34,17 @@ class SarvamAI:
         Returns: (text, detected_language)
         """
         try:
+            logger.info(f"🎤 STT: Received {len(audio_bytes)} bytes of audio")
             session = await self.get_session()
             
             # If no language specified, try multiple languages to find best match
             if language is None:
-                languages = ["te-IN", "hi-IN", "en-IN", "ur-IN"]
+                languages = ["te-IN", "hi-IN", "en-IN", "ur-IN"]  # Try Telugu first
             else:
                 languages = [language]
             
             best_result = ""
-            best_language = "hi-IN"
+            best_language = "te-IN"  # Default to Telugu
             
             for lang in languages:
                 data = aiohttp.FormData()
@@ -56,21 +57,31 @@ class SarvamAI:
                         result = await response.json()
                         text = result.get("transcript", "")
                         
+                        logger.info(f"🔍 STT attempt ({lang}): '{text}' (length: {len(text)})")
+                        
                         # If we get a good transcription, use it
                         if text and len(text.strip()) > len(best_result.strip()):
                             best_result = text
                             best_language = lang
+                            logger.info(f"✅ Better result found in {lang}")
                             
                             # If language was specified, stop here
                             if language:
                                 break
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"❌ STT API error for {lang}: {response.status} - {error_text}")
             
-            logger.info(f"STT ({best_language}): {best_result}")
+            if best_result:
+                logger.info(f"✅ STT Final ({best_language}): {best_result}")
+            else:
+                logger.warning(f"⚠️ STT: No speech detected in any language (tried: {', '.join(languages)})")
+            
             return best_result, best_language
         
         except Exception as e:
-            logger.error(f"STT exception: {e}")
-            return "", "hi-IN"
+            logger.error(f"❌ STT exception: {e}")
+            return "", "te-IN"
     
     async def chat(self, messages: list) -> str:
         """Get LLM response"""
