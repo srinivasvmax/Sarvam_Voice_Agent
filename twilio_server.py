@@ -81,8 +81,8 @@ async def media_stream(websocket: WebSocket):
     max_speech_length = 40000  # Maximum 5 seconds of speech
     
     # Adaptive noise threshold
-    noise_floor = 300  # Initial noise floor
-    speech_threshold = 600  # Initial speech threshold
+    noise_floor = 500  # Initial noise floor (higher to avoid false triggers)
+    speech_threshold = 1000  # Initial speech threshold (higher for clearer speech)
     
     # Conversation context
     messages = [
@@ -219,7 +219,7 @@ Remember: Match the user's language automatically!"""
                 # Adaptive threshold: update noise floor when not speaking
                 if not is_speaking and rms < noise_floor * 1.5:
                     noise_floor = int(noise_floor * 0.95 + rms * 0.05)  # Smooth update
-                    speech_threshold = noise_floor * 2  # Speech is 2x noise floor
+                    speech_threshold = max(noise_floor * 3, 800)  # Speech is 3x noise floor, minimum 800
                 
                 # Detect if user is speaking (volume above adaptive threshold)
                 is_speech = rms > speech_threshold

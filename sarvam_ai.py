@@ -23,8 +23,7 @@ class SarvamAI:
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession(
                 headers={
-                    "API-Subscription-Key": self.api_key,
-                    "Content-Type": "application/json"
+                    "API-Subscription-Key": self.api_key
                 }
             )
         return self.session
@@ -97,7 +96,10 @@ class SarvamAI:
             }
             
             # Use Authorization header for LLM endpoint
-            headers = {"Authorization": f"Bearer {self.api_key}"}
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
             
             async with session.post(self.llm_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
@@ -131,7 +133,9 @@ class SarvamAI:
                 "model": "bulbul:v2"  # Valid model version
             }
             
-            async with session.post(self.tts_url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as response:
+            headers = {"Content-Type": "application/json"}
+            
+            async with session.post(self.tts_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as response:
                 if response.status == 200:
                     result = await response.json()
                     audio_base64 = result["audios"][0]
