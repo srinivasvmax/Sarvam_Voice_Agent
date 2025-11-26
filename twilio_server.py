@@ -103,7 +103,7 @@ Remember: Match the user's language automatically!"""
     
     async def process_speech_buffer():
         """Process accumulated speech buffer"""
-        nonlocal is_speaking, is_processing, audio_buffer, silence_buffer
+        nonlocal is_speaking, is_processing, audio_buffer, silence_buffer, messages
         
         # Prevent concurrent processing
         if is_processing:
@@ -154,46 +154,50 @@ Remember: Match the user's language automatically!"""
             # LLM
             response = await sarvam.chat(messages)
             messages.append({"role": "assistant", "content": response})
+            
+            # Keep conversation short
+            if len(messages) > 11:
+                messages = [messages[0]] + messages[-10:]
+            
+            logger.info(f"🤖 AI responds: {response}")
+            
+            # TTS in the detected language
+            tts_wav = await sarvam.text_to_speech(response, detected_lang)
+            
+            if tts_wav:
+                # Convert WAV to raw mulaw (8kHz, mono) for Twilio
+                response_mulaw = wav_to_mulaw(tts_wav)
+                
+                if response_mulaw:
+                    logger.info(f"📤 Sending {len(response_mulaw)} mulaw bytes to Twilio")
+                    
+                    # Send back to Twilio in 20ms chunks (160 bytes at 8kHz)
+                    chunk_size = 160  # 20ms chunks at 8kHz
+                    for i in range(0, len(response_mulaw), chunk_size):
+                        chunk = response_mulaw[i:i+chunk_size]
+                        encoded = encode_mulaw_base64(chunk)
+                        
+                        media_msg = {
+                            "event": "media",
+                            "streamSid": stream_sid,
+                            "media": {"payload": encoded}
+                        }
+                        
+                        await websocket.send_text(json.dumps(media_msg))
+                        await asyncio.sleep(0.02)  # 20ms delay
+                    
+                    is_processing = False  # Unlock after response sent
+                else:
+                    logger.error("❌ Failed to convert TTS to mulaw")
+                    is_processing = False  # Unlock on error
+            else:
+                logger.error("❌ TTS returned empty audio")
+                is_processing = False  # Unlock on error
+                
         except Exception as e:
-            logger.error(f"❌ Error in STT/LLM: {e}")
+            logger.error(f"❌ Error in speech processing: {e}")
             is_processing = False
             return
-        
-        # Keep conversation short
-        if len(messages) > 11:
-            messages = [messages[0]] + messages[-10:]
-        
-        logger.info(f"🤖 AI responds: {response}")
-        
-        # TTS in the detected language
-        tts_wav = await sarvam.text_to_speech(response, detected_lang)
-        
-        if tts_wav:
-            # Convert WAV to raw mulaw (8kHz, mono) for Twilio
-            response_mulaw = wav_to_mulaw(tts_wav)
-            
-            if response_mulaw:
-                logger.info(f"📤 Sending {len(response_mulaw)} mulaw bytes to Twilio")
-                
-                # Send back to Twilio in 20ms chunks (160 bytes at 8kHz)
-                chunk_size = 160  # 20ms chunks at 8kHz
-                for i in range(0, len(response_mulaw), chunk_size):
-                    chunk = response_mulaw[i:i+chunk_size]
-                    encoded = encode_mulaw_base64(chunk)
-                    
-                    media_msg = {
-                        "event": "media",
-                        "streamSid": stream_sid,
-                        "media": {"payload": encoded}
-                    }
-                    
-                    await websocket.send_text(json.dumps(media_msg))
-                    await asyncio.sleep(0.02)  # 20ms delay
-                
-                is_processing = False  # Unlock after response sent
-            else:
-                logger.error("❌ Failed to convert TTS to mulaw")
-                is_processing = False  # Unlock on error
     
     try:
         while True:

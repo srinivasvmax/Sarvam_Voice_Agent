@@ -38,7 +38,8 @@ class SarvamAI:
             
             # If no language specified, try multiple languages to find best match
             if language is None:
-                languages = ["te-IN", "hi-IN", "en-IN", "ur-IN"]  # Try Telugu first
+                # Supported languages by Sarvam API (no Urdu support)
+                languages = ["te-IN", "hi-IN", "en-IN"]  # Telugu, Hindi, English
             else:
                 languages = [language]
             
