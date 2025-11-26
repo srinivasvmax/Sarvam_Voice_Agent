@@ -111,13 +111,13 @@ class SarvamAI:
             payload = {
                 "inputs": [text],
                 "target_language_code": language,
-                "speaker": "meera",
+                "speaker": "anushka",  # Valid speaker from API
                 "pitch": 0,
                 "pace": 1.0,
                 "loudness": 1.5,
                 "speech_sample_rate": 8000,  # 8kHz for Twilio
                 "enable_preprocessing": True,
-                "model": "bulbul:v1"
+                "model": "bulbul:v2"  # Valid model version
             }
             
             async with session.post(self.tts_url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as response:

@@ -70,7 +70,7 @@ async def media_stream(websocket: WebSocket):
     sarvam = SarvamAI()
     stream_sid = None
     audio_buffer = bytearray()
-    buffer_threshold = 8000  # ~1 second of audio at 8kHz
+    buffer_threshold = 16000  # ~2 seconds of audio at 8kHz (more reliable)
     
     # Conversation context
     messages = [
@@ -111,10 +111,13 @@ Remember: Match the user's language automatically!"""
                     logger.info(f"🎤 Processing {len(audio_buffer)} bytes of audio")
                     
                     # Convert to WAV
-                    wav_data = mulaw_to_wav(bytes(audio_buffer))
+                    mulaw_bytes = bytes(audio_buffer)
+                    logger.info(f"🔊 Converting {len(mulaw_bytes)} mulaw bytes to WAV")
+                    wav_data = mulaw_to_wav(mulaw_bytes)
+                    logger.info(f"🔊 WAV data: {len(wav_data)} bytes")
                     audio_buffer.clear()
                     
-                    if wav_data:
+                    if wav_data and len(wav_data) > 100:
                         # STT with language detection
                         text, detected_lang = await sarvam.speech_to_text(wav_data)
                         
@@ -138,23 +141,28 @@ Remember: Match the user's language automatically!"""
                             tts_wav = await sarvam.text_to_speech(response, detected_lang)
                             
                             if tts_wav:
-                                # Convert to mulaw
+                                # Convert WAV to raw mulaw (8kHz, mono) for Twilio
                                 response_mulaw = wav_to_mulaw(tts_wav)
                                 
-                                # Send back to Twilio in chunks
-                                chunk_size = 160  # 20ms chunks
-                                for i in range(0, len(response_mulaw), chunk_size):
-                                    chunk = response_mulaw[i:i+chunk_size]
-                                    encoded = encode_mulaw_base64(chunk)
+                                if response_mulaw:
+                                    logger.info(f"📤 Sending {len(response_mulaw)} mulaw bytes to Twilio")
                                     
-                                    media_msg = {
-                                        "event": "media",
-                                        "streamSid": stream_sid,
-                                        "media": {"payload": encoded}
-                                    }
-                                    
-                                    await websocket.send_text(json.dumps(media_msg))
-                                    await asyncio.sleep(0.02)  # 20ms delay
+                                    # Send back to Twilio in 20ms chunks (160 bytes at 8kHz)
+                                    chunk_size = 160  # 20ms chunks at 8kHz
+                                    for i in range(0, len(response_mulaw), chunk_size):
+                                        chunk = response_mulaw[i:i+chunk_size]
+                                        encoded = encode_mulaw_base64(chunk)
+                                        
+                                        media_msg = {
+                                            "event": "media",
+                                            "streamSid": stream_sid,
+                                            "media": {"payload": encoded}
+                                        }
+                                        
+                                        await websocket.send_text(json.dumps(media_msg))
+                                        await asyncio.sleep(0.02)  # 20ms delay
+                                else:
+                                    logger.error("❌ Failed to convert TTS to mulaw")
             
             elif event_type == "stop":
                 logger.info("🛑 Stream stopped")
