@@ -224,6 +224,7 @@ Remember: Match the user's language automatically!"""
         
         if not wav_data or len(wav_data) < 100:
             logger.warning("⚠️ WAV conversion failed or too small")
+            is_processing = False  # Unlock on error
             return
         
         # STT with user's selected language
@@ -258,11 +259,22 @@ Remember: Match the user's language automatically!"""
                 response_mulaw = wav_to_mulaw(tts_wav)
                 
                 if response_mulaw:
+                    # Check if we have a valid stream_sid
+                    if not stream_sid:
+                        logger.error("❌ No stream_sid available, cannot send audio")
+                        is_processing = False
+                        return
+                    
                     logger.info(f"📤 Sending {len(response_mulaw)} mulaw bytes to Twilio")
                     
                     # Send back to Twilio in 20ms chunks (160 bytes at 8kHz)
                     chunk_size = 160  # 20ms chunks at 8kHz
                     for i in range(0, len(response_mulaw), chunk_size):
+                        # Check if WebSocket is still connected
+                        if websocket.client_state.name != "CONNECTED":
+                            logger.warning("⚠️ WebSocket disconnected, stopping audio send")
+                            break
+                        
                         chunk = response_mulaw[i:i+chunk_size]
                         encoded = encode_mulaw_base64(chunk)
                         
@@ -272,8 +284,12 @@ Remember: Match the user's language automatically!"""
                             "media": {"payload": encoded}
                         }
                         
-                        await websocket.send_text(json.dumps(media_msg))
-                        await asyncio.sleep(0.02)  # 20ms delay
+                        try:
+                            await websocket.send_text(json.dumps(media_msg))
+                            await asyncio.sleep(0.02)  # 20ms delay
+                        except Exception as send_error:
+                            logger.warning(f"⚠️ Failed to send audio chunk: {send_error}")
+                            break
                     
                     is_processing = False  # Unlock after response sent
                 else:
@@ -290,7 +306,8 @@ Remember: Match the user's language automatically!"""
     
     try:
         while True:
-            data = await websocket.receive_text()
+            # Add timeout to prevent zombie connections
+            data = await asyncio.wait_for(websocket.receive_text(), timeout=300.0)  # 5 min timeout
             event = json.loads(data)
             
             event_type = event.get("event")
@@ -350,8 +367,16 @@ Remember: Match the user's language automatically!"""
     
     finally:
         await sarvam.close()
-        await websocket.close()
-        logger.info("🔌 WebSocket closed")
+        
+        # Only close if not already closed
+        if websocket.client_state.name == "CONNECTED":
+            try:
+                await websocket.close()
+                logger.info("🔌 WebSocket closed")
+            except Exception as close_error:
+                logger.warning(f"⚠️ WebSocket already closed: {close_error}")
+        else:
+            logger.info("🔌 WebSocket already disconnected")
 
 
 @app.post("/call/start")
