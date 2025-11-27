@@ -62,12 +62,17 @@ async def incoming_call(request: Request):
     if retry == "0":
         # First attempt - full greeting
         gather.say("Welcome to Electrical Department Customer Support.", voice="Polly.Aditi", language="en-IN")
+        gather.pause(length=1)  # 1 second pause
     else:
         # Retry - shorter prompt
         gather.say("Please select a language.", voice="Polly.Aditi", language="en-IN")
         gather.say("దయచేసి భాషను ఎంచుకోండి.", voice="Polly.Aditi", language="te-IN")
+        gather.pause(length=1)  # 1 second pause
     
-    gather.say("తెలుగు కోసం 1 నొక్కండి.", voice="Polly.Aditi", language="te-IN")
+    # Language selection prompts with proper voice support
+    # Note: Polly.Aditi supports Hindi/English well, but Telugu needs SSML
+    gather.say("<speak><lang xml:lang='te-IN'>తెలుగు కోసం 1 నొక్కండి</lang></speak>", 
+               voice="Polly.Aditi", language="en-IN")
     gather.say("हिंदी के लिए 2 दबाएं.", voice="Polly.Aditi", language="hi-IN")
     gather.say("Press 3 for English.", voice="Polly.Aditi", language="en-IN")
     
@@ -166,33 +171,65 @@ async def media_stream(websocket: WebSocket):
     is_processing = False  # Prevent concurrent processing
     silence_threshold = 1600  # ~200ms of silence at 8kHz (faster response)
     silence_buffer = bytearray()
-    min_speech_length = 8000  # Minimum 1 second of speech
+    min_speech_length = 6000  # Minimum 0.75 seconds of speech (reduced for better UX)
     max_speech_length = 40000  # Maximum 5 seconds of speech
     
     # Adaptive noise threshold
     noise_floor = 500  # Initial noise floor (higher to avoid false triggers)
     speech_threshold = 1000  # Initial speech threshold (higher for clearer speech)
     
-    # Conversation context
+    # Conversation tracking and analytics
+    call_start_time = asyncio.get_event_loop().time()
+    failed_stt_count = 0  # Track consecutive STT failures
+    max_failed_attempts = 3  # Offer human transfer after 3 failures
+    query_count = 0  # Track number of queries in this call
+    last_user_query = None  # Remember last query for context
+    
+    # Conversation context with language-specific system prompt
+    language_names = {
+        "te-IN": "Telugu",
+        "hi-IN": "Hindi", 
+        "en-IN": "English"
+    }
+    selected_lang_name = language_names.get(selected_language, "English")
+    
     messages = [
         {
             "role": "system",
-            "content": """You are a customer support agent for the Electrical Department. 
+            "content": f"""You are a helpful customer support agent for the Electrical Department in India.
 
-Key instructions:
-- ALWAYS respond in the SAME language the user speaks (English, Hindi, Telugu, Urdu, etc.)
-- Keep responses SHORT and clear (1-2 sentences for voice calls)
-- Be professional and helpful
-- Help with electrical department queries, complaints, and information
-- If you don't know something, politely say so and offer to connect them to a human agent
+CRITICAL: User selected {selected_lang_name} language. You MUST respond ONLY in {selected_lang_name}.
 
-Remember: Match the user's language automatically!"""
+Your responsibilities:
+- Handle electrical complaints (power outages, voltage issues, meter problems)
+- Provide information about electricity bills and payments
+- Help with new connection requests
+- Report electrical hazards and emergencies
+- Provide lineman contact numbers and department information
+
+Guidelines:
+- Keep responses SHORT (1-2 sentences max for voice calls)
+- Be professional, polite, and helpful
+- If you don't have specific information, acknowledge and offer to connect to a human agent
+- For emergencies, prioritize safety and provide emergency contact: 1912
+
+Common queries you can help with:
+- Power outage complaints
+- High electricity bill queries
+- New connection applications
+- Meter reading issues
+- Lineman contact numbers
+- Payment methods
+- Emergency electrical issues
+
+Remember: ALWAYS respond in {selected_lang_name} language only!"""
         }
     ]
     
     async def process_speech_buffer():
         """Process accumulated speech buffer"""
         nonlocal is_speaking, is_processing, audio_buffer, silence_buffer, messages
+        nonlocal failed_stt_count, query_count, last_user_query
         
         # Prevent concurrent processing
         if is_processing:
@@ -227,23 +264,73 @@ Remember: Match the user's language automatically!"""
             is_processing = False  # Unlock on error
             return
         
-        # STT with user's selected language
+        # STT with user's selected language (force it, don't auto-detect)
         try:
+            stt_start = asyncio.get_event_loop().time()
             text, detected_lang = await sarvam.speech_to_text(wav_data, language=selected_language)
+            stt_duration = asyncio.get_event_loop().time() - stt_start
+            
+            # Override detected language with selected language to maintain consistency
+            detected_lang = selected_language
             
             if not text or len(text.strip()) <= 2:
                 logger.warning(f"⚠️ No speech detected or transcript too short: '{text}'")
+                failed_stt_count += 1
+                
+                # Offer human transfer after multiple failures
+                if failed_stt_count >= max_failed_attempts:
+                    logger.warning(f"⚠️ {failed_stt_count} consecutive STT failures, offering human transfer")
+                    fallback_msg = {
+                        "te-IN": "క్షమించండి, నేను మీ మాటలు అర్థం చేసుకోలేకపోతున్నాను. మానవ ఏజెంట్‌కు కనెక్ట్ చేయాలా?",
+                        "hi-IN": "क्षमा करें, मैं आपकी बात समझ नहीं पा रहा हूं। क्या मैं आपको किसी व्यक्ति से जोड़ूं?",
+                        "en-IN": "Sorry, I'm having trouble understanding you. Would you like to speak with a human agent?"
+                    }
+                    # Send fallback message (implementation would need TTS here)
+                    logger.info(f"📞 Fallback: {fallback_msg.get(selected_language)}")
+                
                 is_processing = False  # Unlock
                 return
             
-            logger.info(f"👤 User said ({detected_lang}): {text}")
+            # Reset failure count on successful STT
+            failed_stt_count = 0
+            query_count += 1
+            last_user_query = text
             
-            # Add to conversation
-            messages.append({"role": "user", "content": text})
+            logger.info(f"👤 User said ({detected_lang}): {text} [STT: {stt_duration:.2f}s, Query #{query_count}]")
             
-            # LLM
-            response = await sarvam.chat(messages)
-            messages.append({"role": "assistant", "content": response})
+            # Check for transfer keywords
+            transfer_keywords = {
+                "te-IN": ["మానవుడు", "ఆపరేటర్", "వ్యక్తి", "ఎవరైనా"],
+                "hi-IN": ["मानव", "ऑपरेटर", "व्यक्ति", "कोई"],
+                "en-IN": ["human", "operator", "person", "agent", "someone", "transfer"]
+            }
+            
+            text_lower = text.lower()
+            if any(keyword in text_lower for keyword in transfer_keywords.get(selected_language, [])):
+                logger.info(f"🔄 Transfer requested by user")
+                transfer_msg = {
+                    "te-IN": "మానవ ఏజెంట్‌కు కనెక్ట్ చేస్తున్నాను. దయచేసి వేచి ఉండండి.",
+                    "hi-IN": "मैं आपको किसी व्यक्ति से जोड़ रहा हूं। कृपया प्रतीक्षा करें।",
+                    "en-IN": "Connecting you to a human agent. Please wait."
+                }
+                response = transfer_msg.get(selected_language, transfer_msg["en-IN"])
+                messages.append({"role": "user", "content": text})
+                messages.append({"role": "assistant", "content": response})
+            else:
+                # Add conversation memory context
+                if query_count > 1 and last_user_query:
+                    context_note = f"\n[Previous query: {last_user_query}]"
+                    messages.append({"role": "user", "content": text + context_note})
+                else:
+                    messages.append({"role": "user", "content": text})
+                
+                # LLM
+                llm_start = asyncio.get_event_loop().time()
+                response = await sarvam.chat(messages)
+                llm_duration = asyncio.get_event_loop().time() - llm_start
+                logger.info(f"🤖 LLM response time: {llm_duration:.2f}s")
+                
+                messages.append({"role": "assistant", "content": response})
             
             # Keep conversation short
             if len(messages) > 11:
@@ -251,8 +338,11 @@ Remember: Match the user's language automatically!"""
             
             logger.info(f"🤖 AI responds: {response}")
             
-            # TTS in the detected language
-            tts_wav = await sarvam.text_to_speech(response, detected_lang)
+            # TTS in the user's SELECTED language (not detected)
+            tts_start = asyncio.get_event_loop().time()
+            tts_wav = await sarvam.text_to_speech(response, selected_language)
+            tts_duration = asyncio.get_event_loop().time() - tts_start
+            logger.info(f"🎵 TTS generation time: {tts_duration:.2f}s")
             
             if tts_wav:
                 # Convert WAV to raw mulaw (8kHz, mono) for Twilio
@@ -265,10 +355,12 @@ Remember: Match the user's language automatically!"""
                         is_processing = False
                         return
                     
-                    logger.info(f"📤 Sending {len(response_mulaw)} mulaw bytes to Twilio")
+                    audio_duration = len(response_mulaw) / 8000  # Duration in seconds at 8kHz
+                    logger.info(f"📤 Sending {len(response_mulaw)} mulaw bytes to Twilio (duration: {audio_duration:.2f}s)")
                     
                     # Send back to Twilio in 20ms chunks (160 bytes at 8kHz)
                     chunk_size = 160  # 20ms chunks at 8kHz
+                    send_start = asyncio.get_event_loop().time()
                     for i in range(0, len(response_mulaw), chunk_size):
                         # Check if WebSocket is still connected
                         if websocket.client_state.name != "CONNECTED":
@@ -290,6 +382,10 @@ Remember: Match the user's language automatically!"""
                         except Exception as send_error:
                             logger.warning(f"⚠️ Failed to send audio chunk: {send_error}")
                             break
+                    
+                    send_duration = asyncio.get_event_loop().time() - send_start
+                    total_time = asyncio.get_event_loop().time() - stt_start
+                    logger.info(f"⏱️ Total response time: {total_time:.2f}s (STT: {stt_duration:.2f}s, LLM: {llm_duration:.2f}s, TTS: {tts_duration:.2f}s, Send: {send_duration:.2f}s)")
                     
                     is_processing = False  # Unlock after response sent
                 else:
@@ -362,10 +458,22 @@ Remember: Match the user's language automatically!"""
                 logger.info("🛑 Stream stopped")
                 break
     
+    except asyncio.TimeoutError:
+        logger.warning("⏱️ WebSocket timeout - no data received for 5 minutes")
     except Exception as e:
         logger.error(f"❌ WebSocket error: {e}")
     
     finally:
+        # Call analytics summary
+        call_duration = asyncio.get_event_loop().time() - call_start_time
+        logger.info(f"""
+📊 Call Summary:
+   - Duration: {call_duration:.1f}s
+   - Language: {selected_language}
+   - Queries handled: {query_count}
+   - Failed STT attempts: {failed_stt_count}
+   - Stream ID: {stream_sid}
+        """)
         await sarvam.close()
         
         # Only close if not already closed
