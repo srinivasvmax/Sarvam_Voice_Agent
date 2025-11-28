@@ -69,10 +69,9 @@ async def incoming_call(request: Request):
         gather.say("దయచేసి భాషను ఎంచుకోండి.", voice="Polly.Aditi", language="te-IN")
         gather.pause(length=1)  # 1 second pause
     
-    # Language selection prompts with proper voice support
-    # Note: Polly.Aditi supports Hindi/English well, but Telugu needs SSML
-    gather.say("<speak><lang xml:lang='te-IN'>తెలుగు కోసం 1 నొక్కండి</lang></speak>", 
-               voice="Polly.Aditi", language="en-IN")
+    # Language selection prompts
+    # Note: Using transliteration for Telugu as Polly.Aditi doesn't support Telugu script well
+    gather.say("Telugu kosam okati nokkandi.", voice="Polly.Aditi", language="en-IN")
     gather.say("हिंदी के लिए 2 दबाएं.", voice="Polly.Aditi", language="hi-IN")
     gather.say("Press 3 for English.", voice="Polly.Aditi", language="en-IN")
     
