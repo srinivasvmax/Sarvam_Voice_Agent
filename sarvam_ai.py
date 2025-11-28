@@ -102,7 +102,7 @@ class SarvamAI:
             session = await self.get_session()
             
             payload = {
-                "model": "sarvam-2b",  # Using sarvam-2b for better multilingual support
+                "model": "sarvam-m",  # Valid model: sarvam-m, gemma-4b, or gemma-12b
                 "messages": messages,
                 "temperature": 0.5,  # Lower temperature for more focused, consistent responses
                 "max_tokens": 150,  # Slightly more tokens for complete sentences
