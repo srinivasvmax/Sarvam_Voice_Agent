@@ -245,7 +245,7 @@ async def media_stream(websocket: WebSocket):
         "hi-IN": "Hindi", 
         "en-IN": "English"
     }
-    selected_lang_name = language_names.get(selected_language, "English")
+    selected_lang_name = language_names.get(selected_language, "Telugu")
     
     messages = [
         {
@@ -368,7 +368,7 @@ Remember: ALWAYS respond in {selected_lang_name} language only!"""
                     "hi-IN": "मैं आपको किसी व्यक्ति से जोड़ रहा हूं। कृपया प्रतीक्षा करें।",
                     "en-IN": "Connecting you to a human agent. Please wait."
                 }
-                response = transfer_msg.get(selected_language, transfer_msg["en-IN"])
+                response = transfer_msg.get(selected_language, transfer_msg["te-IN"])
                 messages.append({"role": "user", "content": text})
                 messages.append({"role": "assistant", "content": response})
             else:

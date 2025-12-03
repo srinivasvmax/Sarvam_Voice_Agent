@@ -51,11 +51,13 @@ class SarvamAI:
                 if language is None:
                     # Supported languages by Sarvam API
                     languages = ["te-IN", "hi-IN", "en-IN"]
+                    default_language = "te-IN"  # Default to Telugu if no language specified
                 else:
                     languages = [language]
+                    default_language = language  # Use user's selected language as default
                 
                 best_result = ""
-                best_language = "te-IN"  # Default to Telugu
+                best_language = default_language
                 
                 # Store all results for comparison
                 results = []
@@ -110,16 +112,16 @@ class SarvamAI:
                         logger.info(f"🔄 Retrying STT...")
                         await asyncio.sleep(0.5)
                         continue
-                    return "", "te-IN"
+                    return "", default_language
             
             except Exception as e:
                 logger.error(f"❌ STT exception (attempt {attempt + 1}/{retry_count}): {e}")
                 if attempt < retry_count - 1:
                     await asyncio.sleep(0.5)
                     continue
-                return "", "te-IN"
+                return "", default_language
         
-        return "", "te-IN"
+        return "", default_language
     
     async def chat(self, messages: list, retry_count: int = 2) -> str:
         """Get LLM response with retry logic"""
