@@ -30,6 +30,7 @@ twilio_client = Client(
 )
 
 @app.get("/")
+@app.head("/")
 async def root():
     return {"status": "Twilio server running", "service": "Pipecat + Twilio"}
 
@@ -224,7 +225,7 @@ async def media_stream(websocket: WebSocket):
     is_processing = False  # Prevent concurrent processing
     silence_threshold = 1600  # ~200ms of silence at 8kHz (faster response)
     silence_buffer = bytearray()
-    min_speech_length = 6000  # Minimum 0.75 seconds of speech (reduced for better UX)
+    min_speech_length = 4000  # Minimum 0.5 seconds of speech (reduced from 6000 for better responsiveness)
     max_speech_length = 40000  # Maximum 5 seconds of speech
     
     # Adaptive noise threshold
@@ -261,9 +262,10 @@ Your responsibilities:
 - Provide lineman contact numbers and department information
 
 Guidelines:
-- Keep responses SHORT (1-2 sentences max for voice calls)
+- Keep responses SHORT and CONCISE (2-3 sentences maximum for voice calls)
 - Be professional, polite, and helpful
-- If you don't have specific information, acknowledge and offer to connect to a human agent
+- Ask ONE clear question at a time
+- If you don't have specific information, acknowledge briefly and offer to connect to a human agent
 - For emergencies, prioritize safety and provide emergency contact: 1912
 
 Common queries you can help with:
@@ -410,6 +412,16 @@ Remember: ALWAYS respond in {selected_lang_name} language only!"""
                     
                     audio_duration = len(response_mulaw) / 8000  # Duration in seconds at 8kHz
                     logger.info(f"📤 Sending {len(response_mulaw)} mulaw bytes to Twilio (duration: {audio_duration:.2f}s)")
+                    
+                    # Clear any queued audio from Twilio before sending our response
+                    try:
+                        clear_msg = {
+                            "event": "clear",
+                            "streamSid": stream_sid
+                        }
+                        await websocket.send_text(json.dumps(clear_msg))
+                    except Exception as clear_error:
+                        logger.warning(f"⚠️ Failed to clear audio queue: {clear_error}")
                     
                     # Send back to Twilio in 20ms chunks (160 bytes at 8kHz)
                     chunk_size = 160  # 20ms chunks at 8kHz

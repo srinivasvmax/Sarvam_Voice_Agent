@@ -131,7 +131,7 @@ class SarvamAI:
                     "model": "sarvam-m",  # Valid model: sarvam-m, gemma-4b, or gemma-12b
                     "messages": messages,
                     "temperature": 0.5,  # Lower temperature for more focused, consistent responses
-                    "max_tokens": 150,  # Slightly more tokens for complete sentences
+                    "max_tokens": 100,  # Balanced length for voice calls (2-3 sentences)
                     "top_p": 0.85,  # Slightly lower for more deterministic responses
                     "frequency_penalty": 0.3,  # Reduce repetitive responses
                     "presence_penalty": 0.2  # Encourage diverse vocabulary
