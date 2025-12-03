@@ -65,3 +65,7 @@ ngrok.yml
 
 # Railway
 .railway/
+
+.env.example
+call_script.py
+CALL_SETUP.md

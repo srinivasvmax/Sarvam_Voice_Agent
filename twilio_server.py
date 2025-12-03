@@ -16,6 +16,13 @@ load_dotenv()
 
 app = FastAPI()
 
+# Validate required environment variables
+required_env_vars = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER", "SARVAM_API_KEY"]
+missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+if missing_vars:
+    logger.error(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
+    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
 # Twilio client
 twilio_client = Client(
     os.getenv("TWILIO_ACCOUNT_SID"),
@@ -25,6 +32,46 @@ twilio_client = Client(
 @app.get("/")
 async def root():
     return {"status": "Twilio server running", "service": "Pipecat + Twilio"}
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint with dependency verification"""
+    health_status = {
+        "status": "healthy",
+        "service": "Twilio Voice Bot",
+        "checks": {}
+    }
+    
+    # Check environment variables
+    health_status["checks"]["env_vars"] = all([
+        os.getenv("TWILIO_ACCOUNT_SID"),
+        os.getenv("TWILIO_AUTH_TOKEN"),
+        os.getenv("TWILIO_PHONE_NUMBER"),
+        os.getenv("SARVAM_API_KEY")
+    ])
+    
+    # Check Sarvam AI connectivity
+    try:
+        from sarvam_ai import SarvamAI
+        sarvam = SarvamAI()
+        await sarvam.close()
+        health_status["checks"]["sarvam_ai"] = True
+    except Exception as e:
+        health_status["checks"]["sarvam_ai"] = False
+        health_status["checks"]["sarvam_error"] = str(e)
+        health_status["status"] = "degraded"
+    
+    # Check Twilio client
+    try:
+        twilio_client.api.accounts(os.getenv("TWILIO_ACCOUNT_SID")).fetch()
+        health_status["checks"]["twilio"] = True
+    except Exception as e:
+        health_status["checks"]["twilio"] = False
+        health_status["checks"]["twilio_error"] = str(e)
+        health_status["status"] = "degraded"
+    
+    return health_status
 
 
 @app.post("/voice/incoming")
@@ -161,9 +208,16 @@ async def media_stream(websocket: WebSocket):
     import json
     import audioop
     
-    sarvam = SarvamAI()
+    try:
+        sarvam = SarvamAI()
+    except ValueError as e:
+        logger.error(f"❌ Failed to initialize Sarvam AI: {e}")
+        await websocket.close(code=1011, reason="Configuration error")
+        return
+    
     stream_sid = None
     audio_buffer = bytearray()
+    stream_ready = False
     
     # Voice Activity Detection (VAD) settings
     is_speaking = False
@@ -409,9 +463,15 @@ Remember: ALWAYS respond in {selected_lang_name} language only!"""
             
             if event_type == "start":
                 stream_sid = event["start"]["streamSid"]
+                stream_ready = True
                 logger.info(f"🎙️ Stream started: {stream_sid}")
             
             elif event_type == "media":
+                # Wait for stream to be ready before processing audio
+                if not stream_ready or not stream_sid:
+                    logger.warning("⚠️ Received media before stream ready, skipping...")
+                    continue
+                
                 # Receive audio from Twilio
                 payload = event["media"]["payload"]
                 mulaw_data = decode_mulaw_base64(payload)
@@ -440,8 +500,15 @@ Remember: ALWAYS respond in {selected_lang_name} language only!"""
                     
                     # Prevent buffer from getting too large
                     if len(audio_buffer) > max_speech_length:
-                        logger.info(f"⏱️ Max speech length reached, processing...")
+                        logger.warning(f"⚠️ Max speech length reached ({len(audio_buffer)} bytes), processing...")
                         await process_speech_buffer()
+                    
+                    # Safety: prevent unbounded growth if processing fails
+                    if len(audio_buffer) > max_speech_length * 2:
+                        logger.error(f"❌ Audio buffer overflow ({len(audio_buffer)} bytes), clearing...")
+                        audio_buffer.clear()
+                        silence_buffer.clear()
+                        is_speaking = False
                 else:
                     # Silence or low volume
                     if is_speaking:
@@ -517,5 +584,6 @@ async def outbound_call(request: Request):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    logger.info(f"Starting Twilio server on port {port}")
-    uvicorn.run("twilio_server:app", host="0.0.0.0", port=port, reload=True)
+    is_production = os.getenv("ENVIRONMENT", "development") == "production"
+    logger.info(f"Starting Twilio server on port {port} ({'production' if is_production else 'development'} mode)")
+    uvicorn.run("twilio_server:app", host="0.0.0.0", port=port, reload=not is_production)
