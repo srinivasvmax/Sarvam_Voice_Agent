@@ -114,7 +114,7 @@ async def incoming_call(request: Request):
     else:
         # Retry - shorter prompt
         gather.say("Please select a language.", voice="Polly.Aditi", language="en-IN")
-        gather.say("దయచేసి భాషను ఎంచుకోండి.", voice="Polly.Aditi", language="te-IN")
+        gather.say("Dayachesi bhashanu ennukondee.", voice="Polly.Aditi", language="en-IN")
         gather.pause(length=1)  # 1 second pause
     
     # Language selection prompts
@@ -126,7 +126,7 @@ async def incoming_call(request: Request):
     # If no input after retry, default to Telugu
     if retry == "1":
         response.say("No input received.", voice="Polly.Aditi", language="en-IN")
-        response.say("తెలుగుకు మారుతోంది.", voice="Polly.Aditi", language="te-IN")
+        response.say("Teluguku maarutundi.", voice="Polly.Aditi", language="en-IN")
         response.redirect('/voice/language-selected?Digits=1')
     else:
         # First timeout - ask again
@@ -163,7 +163,7 @@ async def language_selected(request: Request):
         if retry == "0":
             response = VoiceResponse()
             response.say("Invalid selection.", voice="Polly.Aditi", language="en-IN")
-            response.say("చెల్లని ఎంపిక.", voice="Polly.Aditi", language="te-IN")
+            response.say("Chellani enpika.", voice="Polly.Aditi", language="en-IN")
             response.redirect('/voice/incoming?retry=1')
             return Response(content=str(response), media_type="application/xml")
         else:
@@ -178,8 +178,9 @@ async def language_selected(request: Request):
     response = VoiceResponse()
     
     # Confirm selection in chosen language (short and clear)
+    # Note: Using transliteration for Telugu as Polly.Aditi doesn't render Telugu script properly
     if selected_lang['code'] == "te-IN":
-        response.say("తెలుగు. మీకు ఎలా సహాయం చేయగలను?", voice="Polly.Aditi", language="te-IN")
+        response.say("Telugu. Meeku ela sahayam cheyagalanu?", voice="Polly.Aditi", language="en-IN")
     elif selected_lang['code'] == "hi-IN":
         response.say("हिंदी। मैं आपकी कैसे मदद कर सकता हूं?", voice="Polly.Aditi", language="hi-IN")
     else:
@@ -187,7 +188,9 @@ async def language_selected(request: Request):
     
     # Connect to WebSocket with language parameter
     connect = Connect()
-    stream = Stream(url=f'wss://{request.url.hostname}/media-stream?lang={selected_lang["code"]}')
+    stream = Stream(url=f'wss://{request.url.hostname}/media-stream')
+    # Pass language as a custom parameter that Twilio will send in the 'start' event
+    stream.parameter(name='language', value=selected_lang["code"])
     connect.append(stream)
     response.append(connect)
     
@@ -199,10 +202,9 @@ async def media_stream(websocket: WebSocket):
     """Handle Twilio media stream WebSocket with full AI conversation"""
     await websocket.accept()
     
-    # Get selected language from query params
-    query_params = dict(websocket.query_params)
-    selected_language = query_params.get("lang", "te-IN")
-    logger.info(f"🔌 WebSocket connected with language: {selected_language}")
+    # Get selected language from Twilio's start event (will be set when stream starts)
+    selected_language = "te-IN"  # Default, will be overridden by start event
+    logger.info(f"🔌 WebSocket connected, waiting for language from start event...")
     
     from sarvam_ai import SarvamAI
     from audio_utils import decode_mulaw_base64, mulaw_to_wav, wav_to_mulaw, encode_mulaw_base64
@@ -245,41 +247,9 @@ async def media_stream(websocket: WebSocket):
         "hi-IN": "Hindi", 
         "en-IN": "English"
     }
-    selected_lang_name = language_names.get(selected_language, "Telugu")
     
-    messages = [
-        {
-            "role": "system",
-            "content": f"""You are a helpful customer support agent for the Electrical Department in India.
-
-CRITICAL: User selected {selected_lang_name} language. You MUST respond ONLY in {selected_lang_name}.
-
-Your responsibilities:
-- Handle electrical complaints (power outages, voltage issues, meter problems)
-- Provide information about electricity bills and payments
-- Help with new connection requests
-- Report electrical hazards and emergencies
-- Provide lineman contact numbers and department information
-
-Guidelines:
-- Keep responses SHORT and CONCISE (2-3 sentences maximum for voice calls)
-- Be professional, polite, and helpful
-- Ask ONE clear question at a time
-- If you don't have specific information, acknowledge briefly and offer to connect to a human agent
-- For emergencies, prioritize safety and provide emergency contact: 1912
-
-Common queries you can help with:
-- Power outage complaints
-- High electricity bill queries
-- New connection applications
-- Meter reading issues
-- Lineman contact numbers
-- Payment methods
-- Emergency electrical issues
-
-Remember: ALWAYS respond in {selected_lang_name} language only!"""
-        }
-    ]
+    # Initialize messages as empty - will be set when language is received
+    messages = []
     
     async def process_speech_buffer():
         """Process accumulated speech buffer"""
@@ -476,7 +446,51 @@ Remember: ALWAYS respond in {selected_lang_name} language only!"""
             if event_type == "start":
                 stream_sid = event["start"]["streamSid"]
                 stream_ready = True
-                logger.info(f"🎙️ Stream started: {stream_sid}")
+                
+                # Get language from custom parameters sent by Twilio
+                custom_params = event["start"].get("customParameters", {})
+                if "language" in custom_params:
+                    selected_language = custom_params["language"]
+                    logger.info(f"🎙️ Stream started: {stream_sid} with language: {selected_language}")
+                else:
+                    logger.warning(f"⚠️ No language parameter received, using default: {selected_language}")
+                    logger.info(f"🎙️ Stream started: {stream_sid}")
+                
+                # NOW initialize the system prompt with the correct language
+                selected_lang_name = language_names.get(selected_language, "Telugu")
+                messages.clear()  # Clear any existing messages
+                messages.append({
+                    "role": "system",
+                    "content": f"""You are a helpful customer support agent for the Electrical Department in India.
+
+CRITICAL: User selected {selected_lang_name} language. You MUST respond ONLY in {selected_lang_name}.
+
+Your responsibilities:
+- Handle electrical complaints (power outages, voltage issues, meter problems)
+- Provide information about electricity bills and payments
+- Help with new connection requests
+- Report electrical hazards and emergencies
+- Provide lineman contact numbers and department information
+
+Guidelines:
+- Keep responses SHORT and CONCISE (2-3 sentences maximum for voice calls)
+- Be professional, polite, and helpful
+- Ask ONE clear question at a time
+- If you don't have specific information, acknowledge briefly and offer to connect to a human agent
+- For emergencies, prioritize safety and provide emergency contact: 1912
+
+Common queries you can help with:
+- Power outage complaints
+- High electricity bill queries
+- New connection applications
+- Meter reading issues
+- Lineman contact numbers
+- Payment methods
+- Emergency electrical issues
+
+Remember: ALWAYS respond in {selected_lang_name} language only!"""
+                })
+                logger.info(f"✅ System prompt initialized for {selected_lang_name}")
             
             elif event_type == "media":
                 # Wait for stream to be ready before processing audio
